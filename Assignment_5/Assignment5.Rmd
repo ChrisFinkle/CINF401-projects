@@ -1,0 +1,80 @@
+---
+title: "Assignment_5"
+author: "ChrisFinkle"
+date: "2/20/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+###The Effects of Email Signoffs on Response Rates
+
+Using a collection of data from the R-help mailing list, we are going to examine which e-mail signoffs result in the best response rates in order to either replicate or call into question the results collected by some nameless flunkey blogging for an app called 'boomerang'. 
+
+```{r, echo=F, warning=F}
+library(reshape2)
+library(knitr)
+emails <- read.csv("/home/jeckroth/cinf401/r-help-threads.csv")
+
+emails <- cbind(emails, Signoff=c(NA))
+emails$msgcnt <- ifelse(emails$msgcnt>1, TRUE, FALSE)
+
+emails$Signoff <- ifelse(grepl("thanks(?:,|\\n)", emails$rootbody, ignore.case=T),"Thanks", "other")
+emails$Signoff <- ifelse(grepl("thanks in advance(?:,|\\n)", emails$rootbody, ignore.case=T),"Thanks in Advance",emails$Signoff)
+emails$Signoff <- ifelse(grepl("thank you(?:,|\\n)", emails$rootbody, ignore.case=T),"Thank You",emails$Signoff)
+emails$Signoff <- ifelse(grepl("cheers(?:,|\\n)", emails$rootbody, ignore.case=T),"Cheers",emails$Signoff)
+emails$Signoff <- ifelse(grepl("kind regards(?:,|\\n)", emails$rootbody, ignore.case=T),"Kind Regards",emails$Signoff)
+emails$Signoff <- ifelse(grepl("best regards(?:,|\\n)", emails$rootbody, ignore.case=T),"Best Regards", emails$Signoff)
+emails$Signoff <- ifelse(grepl("\\nregards(?:,|\\n)", emails$rootbody, ignore.case=T),"Regards",emails$Signoff)
+emails$Signoff <- ifelse(grepl("\\nbest(?:,|\\n)", emails$rootbody, ignore.case=T),"Best",emails$Signoff)
+
+summary <- aggregate(msgcnt~Signoff, subset(emails, Signoff!="other"), mean)
+summary <- summary[order(-summary$msgcnt),]
+colnames(summary) <- c("Signoff", "Reply Percentage")
+total <- sum(emails$msgcnt)/nrow(emails)
+summary <- rbind(summary, c("Total", total))
+summary$`Reply Percentage` <-as.numeric(summary$`Reply Percentage`) * 100
+kable(summary, digits = 2, row.names = FALSE)
+```
+
+In many ways, the boomerang blogger is vindicated. The 'thankful closings' ("Thanks", "Thank you", and "Thanks in Advance") form the top trio of sign-offs when it comes to soliciting responses, each with response rates in the high 60s, significantly higher than the competition. And like the other results, we find that the 'regards' signoffs are in the middle of the pack and 'best' is the very worst, with a response rate in the low 50s. The range, max, and min of these results are quite similar to Boomerang's findings.
+
+Where our results differ, however, is on the baseline likelihood of response. While the previous findings held that all eight popular signoffs increased the probability of an answer, our data indicates that four of them are in fact less likely to produce a response. Across all the emails, the repsonse rate was a whopping 62.5%, far outstripping those reticent hermits in the other dataset, who responded only 47.5% of the time. While numbers in the upper 60s represented a clear improvement over Boomerang's taciturn baseline, it's unclear how statistically significant the impact of thankful greetings (much less the others) is on this data's respondents. Let's analyze that!
+
+###Proportion Test of Various Signoffs
+
+We will group "Thanks", "Thanks in Advance", and "Thank You" together as the so-called "thankful closings". We will determine what percentage of the time these signoffs receive responses, and perform a proportion test against the complete set of emails to ensure that the difference is statistically significant.
+
+```{r, warning = F, echo = F}
+ThankfulResponses <- nrow(subset(emails, msgcnt == T & (Signoff == "Thanks" | Signoff == "Thank You" | Signoff == "Thanks in Advance")))
+TotalResponses <- nrow(subset(emails, msgcnt == T))
+ThankfulOverall <- nrow(subset(emails, Signoff == "Thanks" | Signoff == "Thank You" | Signoff == "Thanks in Advance"))
+TotalOverall <- nrow(emails)
+prop.test(x = c(ThankfulResponses, TotalResponses), n = c(ThankfulOverall, TotalOverall))
+```
+
+We see that 'thankful closings' have a higher estimated response rate than the baseline, with an incredibly stringent p-value (p<<0.01). This shows that the 'thankful closings', without much possibility for doubt, increase response rates.
+
+For contrast, let's test one of our middle-of-the-road signoffs, "Kind Regards". While its mean technically improves upon the baseline level, the improvement is so small that it is stastically meaningless.
+
+```{r, warning = F, echo = F}
+RegardsResponses <- nrow(subset(emails, msgcnt == T & Signoff == "Kind Regards"))
+RegardsOverall<- nrow(subset(emails, Signoff == "Kind Regards"))
+
+prop.test(x = c(RegardsResponses, TotalResponses), n = c(RegardsOverall, TotalOverall))
+```
+
+Here, no clear correlation can be established, as evidenced by the ambivalent p-value (p>0.05). Putting 'Kind Regards' in your email will likely not impact the probability of receiving a response according to our data, in contrast to the Boomerang data where even a lackluster closing like "Kind Regards" offered significant benefits.
+
+Finally, let's see if the thoroughly underhwelming "Best" signoff is statistically anticorrelated with response rate.
+
+```{r, warning = F, echo = F}
+BestResponses <- nrow(subset(emails, msgcnt == T & Signoff == "Best"))
+BestOverall<- nrow(subset(emails, Signoff == "Best"))
+
+prop.test(x = c(BestResponses, TotalResponses), n = c(BestOverall, TotalOverall))
+```
+
+Yes, "Best" is actually strongly anticorrelated with response rate - putting it in your email somehow decreases the odds your other correspondent will reply (p << 0.01). So don't do that!
