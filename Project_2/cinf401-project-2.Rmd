@@ -1,0 +1,93 @@
+---
+title: "cinf-project-2"
+author: "Kathryn Sarullo and Chris Finkle"
+date: "3/15/2017"
+output:
+  html_document: default
+  pdf_document: default
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+##Task 1
+
+Stackexchange sites cater to a wide range of ages, but the modal user is 24.
+
+```{r, echo=FALSE}
+suppressMessages(library(plyr))
+suppressMessages(library(dplyr))
+library(stringr)
+library(ggplot2)
+
+#Read in data
+agedata <- read.table("Task1/agefinderdata.txt")
+
+#Update column names and get rid of bad account id's and bad ages
+colnames(agedata) <- c("AccountId", "Age")
+agedata <- agedata[agedata$AccountId != -2, ]
+agedata <- agedata[agedata$Age != -1, ]
+
+#Count occurences of ages
+ageplot <- count(agedata, Age)
+
+#Graph number of users per age
+agegraph <- ggplot(ageplot) + geom_bar(aes(x=Age, y=n), stat="identity") + scale_x_continuous("Age", limits = c(0,100)) + scale_y_continuous("Number of Accounts")
+agegraph
+
+```
+
+##Task 2
+
+The top ten tags for each subsite are often descriptive of its contents. Sometimes we can observe interesting trends, like that meta sites tend to have similar top tags regardless of what it is they're meta about.
+
+```{r, echo = F}
+suppressMessages(library(stringr))
+library(knitr)
+
+tags <- read.csv("Task2/tagdata.txt", header=F, sep='\t')
+colnames(tags) <- c("Site", "Tags")
+
+tags <- tags %>%
+  mutate(Top_Ten_Tags = str_replace_all(Tags, ",", ", ")) %>%
+  select(Site, Top_Ten_Tags)
+
+kable(tags, row.names=F)
+```
+
+##Task 3
+
+Does quantity equal quality? Looking at data across all sites we can try to figure out how much of a user's reputation is explained by the sheer number of posts they write.
+
+```{r, echo = F, warning = F}
+library(scales)
+
+accs <- read.csv("Task3/accounts.txt", sep="\t", header=F)
+colnames(accs) <- c("AccountId", "UserId")
+accs <- accs %>%
+  filter(AccountId != -2)
+
+posts <- read.csv("Task3/post_counts.txt", sep="\t", header=F)
+colnames(posts) <- c("UserId", "PostCount")
+
+reps <- read.csv("Task3/repdata.txt", sep="\t", header=F)
+colnames(reps) <- c("AccountId", "Reputation")
+
+postdata <- merge(accs, posts, by.x = "UserId", by.y = "UserId")
+
+d <- postdata %>%
+  group_by(AccountId) %>%
+  summarise_each(funs(sum), PostCount) %>%
+  merge(reps, by.x = "AccountId", by.y = "AccountId")
+  
+d %>%
+  sample_frac(0.2) %>% #speeds up graphing process without overly changing result
+  filter(PostCount < 10000) %>%
+  ggplot(aes(x=PostCount, y=Reputation)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  scale_x_continuous("Post Count") +
+  scale_y_continuous("Reputation", labels = comma)
+c <- cor(d$Reputation,d$PostCount)
+```
+
+The correlation coefficient between post quantity and overall reputation is 0.91, indicating that about 91% of a user's reputation score is explained by how many posts they make. This makes sense - many of the opportunities to earn reputation arise from making posts.

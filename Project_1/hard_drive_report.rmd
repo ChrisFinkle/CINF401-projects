@@ -1,0 +1,182 @@
+---
+title: "Project 1"
+author: "Chris Finkle"
+date: "2/27/2017"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=F, warning=F}
+suppressMessages(library(readr))
+suppressMessages(library(dplyr))
+suppressMessages(d <- read_csv("drive.csv")) #Takes forever
+
+d <- d %>%
+  filter(Capacity < 10^14) #remove erroneously high values for entire program
+```
+
+##Backblaze
+
+Backblaze is a service for Windows and Mac users who wish to back up data in a remote location - one might think of it as part 'the cloud'. But like all things in the cloud, it relies on all too terrestrial hardware in the end.
+
+###Hard Drives
+
+Specifically, Backblaze relies on racks and racks of off-the-shelf hard drives organized into StoragePods. In order to keep up with the increasing demands of a customer base whose machines are hooked into the exponential growth of Moore's Law, Backblaze has consistently added drives at an exponential rate since 2013.
+
+```{r, echo=F, warning=F}
+library(ggplot2)
+
+cap_by_day <- d %>%
+  select(Date, Capacity, Failure) %>%
+  filter(Failure==0) %>%
+  group_by(Date) %>%
+  summarise(Total_Capacity = sum(Capacity)/10^15) %>% #10^15 = bytes in a peta
+  mutate(realDate = as.Date(Date))
+
+cap_by_day %>% 
+  ggplot() + 
+  aes(x = realDate, y = Total_Capacity) + 
+  geom_point(size=0.5) +
+  scale_x_date("Date") +
+  scale_y_continuous("Total Capacity (Petabytes)") +
+  ggtitle("Drive Capacity Over Time") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+ggsave("capacity_graph.png", width = 5, height = 4)
+```
+
+From an initial capacity just over 50 PB, the company's collective capacity exceeded 300 PB in 2016.
+
+###Drive Failure
+
+With so many thousands of drives running, a certain number of failures is inevitable. The Annual Failure Rate (AFR) is a way of understanding what proportion of the drives can be expected to fail during a drive year. A failure rate of 5% indicates that if we ran 20 drives for a year, we would expect one of them to die during that time (for a very simplified example).
+
+```{r, echo=F, warning=F}
+library(stringr)
+
+#doing two group_by + summarise operations may seem redundant but it's a huge speedup
+dy <- d %>% 
+  select(Date,Failure) %>%
+  group_by(Date) %>%
+  summarise(Fails = sum(Failure), Drive_Days = n()) %>%
+  mutate(Year = str_extract(Date, "[:digit:]{4}")) %>%
+  group_by(Year) %>%
+  summarise_each(funs(sum), Fails, Drive_Days) %>%
+  mutate(Annual_Rate = 36500*Fails/Drive_Days)
+
+dy %>%
+  ggplot() +
+  geom_bar(stat='identity', aes(x=Year, y=Annual_Rate)) +
+  scale_y_continuous("% Annual Failure Rate") +
+  ggtitle("Failure Rates Over Time") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+ggsave("fail_by_year.png", width = 5, height = 4)
+```
+
+In 2014, Backblaze's failure rate hit its highest level, cresting 6%. Something changed in 2015 however, and their AFR has been much smaller in subsequent years. Part of this may be due to more effective data analysis.
+
+For example, using drive feedback it's possible to determine which drive manufacturers fail more often than others so that they can be avoided in the future.
+
+```{r, echo=F, warning=F}
+dm <- d %>%
+  select(Model, Failure) %>%
+  group_by(Model) %>%
+  summarise(Fails = sum(Failure), Drive_Days = n()) %>%
+  mutate(Manufacturer = str_extract(Model, "[:alpha:]+")) %>%
+  group_by(Manufacturer) %>%
+  summarise_each(funs(sum), Fails, Drive_Days) %>%
+  mutate(Annual_Rate = 36500*Fails/Drive_Days) %>%
+  arrange(Annual_Rate)
+
+#conversion to factor necessary to prevent ggplot reordering bars
+dm$Manufacturer <- factor(dm$Manufacturer, levels = unique(dm$Manufacturer))
+
+dm %>%
+  ggplot() +
+  geom_bar(stat="identity", aes(Manufacturer, y=Annual_Rate)) +
+  scale_y_continuous("% Annual Failure Rate (Avg 2013-16)") +
+  ggtitle("Failure Rates by Manufacturer") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+ggsave("fail_by_mfctr.png", width = 5, height = 4)
+```
+
+Western Digital (WDC) is the worst offender of the bunch. Along with Samsung, their drives have an AFR of over six percent. Curiously, WDC subsidiary HGST is the most consistent, with a miniscule AFR of less than one percent.
+
+Knowledge of failure rates by manufacturer is important from a big-picture level ("Where should we buy our next thousand drives?") but this type of population-level understanding does little good once the drives are bought and installed. In order to respond efficiently and effectively to individual drive failures, more granular data is required.
+
+###SMART Statistics
+
+Each individual drive is capable of providing dozens of metrics known as SMART stats which describe certain behaviors, some of which can be troubling. Among the most dire is "smart_187", which counts the number of uncorrected read errors a drive suffers during the day.
+
+```{r, echo=F, warning=F}
+
+err <- d %>%
+  select(Failure, Smart_187_raw) %>%
+  filter(!is.na(Smart_187_raw)) %>%
+  mutate(num_187 = as.numeric(Smart_187_raw)) %>%
+  group_by(num_187) %>%
+  summarise(Fails = sum(Failure), Drive_Days = n()) %>%
+  mutate(Bin = cut(num_187, 
+         breaks = c(-1,0,1,3,6,11,20,35,65,120,Inf),
+         labels = c("0","1","2-3","4-6","7-11","12-20","21-35","36-65","65-120","120+")
+         )) %>%
+  group_by(Bin) %>%
+  summarise_each(funs(sum), Fails, Drive_Days) %>%
+  mutate(Annual_Rate = 36500*Fails/Drive_Days)
+
+err %>%
+  ggplot() +
+  geom_bar(stat="identity", aes(Bin, y=Annual_Rate)) + 
+  scale_y_continuous("% Annual Failure Rate") +
+  scale_x_discrete("Number of Uncorrected Reads") +
+  ggtitle("Annual Failure Rate by Smart_187 Raw Value") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+ggsave("fail_by_error.png", width = 5, height = 4)
+```
+
+As can be seen in the graph, AFR goes up along with the value of Smart_187. Even a single uncorrected read error is enough to send failures spiking more than tenfold. Having a non-zero value for Smart_187 certainly seems like a good proxy for imminent drive failure. 
+
+Just to be sure, let's perform a Two Sample t-test on failing and non-failing drives to make sure that they have significantly different Smart_187 values on average.
+
+```{r, echo=F, warning = F, comment=''}
+dt <- d %>%
+  select(Failure, Smart_187_raw) %>%
+  filter(!is.na(Smart_187_raw)) %>%
+  mutate(num_err = as.numeric(Smart_187_raw)) %>%
+  select(Failure, num_err)
+
+
+Non_Failing_Drives <- dt %>%
+  filter(Failure == 0)
+
+Failing_Drives <- dt %>%
+  filter(Failure == 1)
+
+t.test(Non_Failing_Drives$num_err, Failing_Drives$num_err)
+```
+
+The mean Smart_187 value for non-failing drives was less than 1, while for failing drives it was 64. The samples are large enough that we can safely conclude a strong correlation between failure and high Smart_187 (p<0.0005). The instant an indvidual drive reports an uncorrected read error, it's time to schedule it for replacement. Indeed, this has been Backblaze's policy since at least late 2014; it may have contributed to their decreased aggregate AFR in subsequent years.
+
+###Notes
+
+The raw data collected from Backblaze's hard drives was dozens of columns wide and distributed across hundreds of daily .csv files. In order to collect the five stats required for these analyses into a single file, they were each routed into this python script:
+
+```{r, echo=F, comment=''}
+cat(readLines('file_reader.py'), sep = '\n')
+```
+
+The routing was automated (and the column names inserted) by a bash script:
+
+```{r, echo=F, comment=''}
+cat(readLines('read.sh'), sep = '\n')
+```
+
+This concatenation took approximately 5 minutes and resulted in an unwieldy 2.5 GB text file of nearly 60 million lines. For problems an order of magnitude or more larger than this one, such techniques will no longer be practical. However, their performance was satisfactory in this situation.

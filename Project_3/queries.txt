@@ -1,0 +1,106 @@
+These are the queries we used in google's Bigquery to generate the .csvs
+which were loaded into R to generate the graphics.
+
+#Task 1
+
+SELECT
+  DAYOFWEEK(pickup_datetime) AS weekday,
+  HOUR(pickup_datetime) AS hour,
+  COUNT(*) AS freq
+FROM 
+  [nyc-tlc:yellow.trips]
+GROUP BY
+  weekday, hour
+ORDER BY
+  weekday, hour
+
+#Task 2
+
+SELECT
+  MONTH(pickup_datetime) AS month,
+  YEAR(pickup_datetime) AS year,
+  SUM(passenger_count) AS rider_mil
+FROM 
+  [nyc-tlc:yellow.trips]
+GROUP BY
+  month, year
+ORDER BY
+  month, year
+
+#Task 3
+
+SELECT
+  YEAR(pickup_datetime) AS year,
+  DAYOFYEAR(pickup_datetime) AS day,
+  AVG(trip_distance) AS avg_dist
+FROM 
+  [nyc-tlc:yellow.trips]
+WHERE
+  YEAR(pickup_datetime) != 2015 AND
+  trip_distance > 0
+GROUP BY
+  year, day
+ORDER BY
+  year, day
+
+#Task 4
+
+SELECT
+  YEAR(pickup_datetime) AS year,
+  SUM(total_amount) AS tot_amt
+FROM 
+  [nyc-tlc:yellow.trips]
+WHERE
+  total_amount > 0
+GROUP BY
+  year
+ORDER BY
+  year
+
+#Tasks 5 and 6
+
+SELECT
+  ROUND(pickup_longitude, 3) AS pickup_long,
+  ROUND(pickup_latitude, 3) AS pickup_lat,
+  ROUND(dropoff_longitude, 3) AS dropoff_long,
+  ROUND(dropoff_latitude, 3) AS dropoff_lat,
+  HOUR(pickup_datetime) AS hour,
+  COUNT(*) AS freq
+FROM
+  [nyc-tlc:yellow.trips]
+WHERE
+  trip_distance > 0
+  AND DAY(pickup_datetime) > 1
+  AND DAY(pickup_datetime) < 7
+  AND ((HOUR(pickup_datetime) > 6
+      AND HOUR(pickup_datetime) < 11)
+    OR (HOUR(pickup_datetime) > 17
+      AND HOUR(pickup_datetime) <23))
+GROUP BY
+  pickup_long,
+  pickup_lat,
+  dropoff_long,
+  dropoff_lat,
+  hour
+
+followed by (these probably could've been turned into one query but oh well)
+
+SELECT
+  pickup_long,
+  pickup_lat,
+  dropoff_long,
+  dropoff_lat,
+  IF(hour<12, "morning", "evening") AS time_of_day,
+  SUM(freq) AS total
+FROM [thematic-ruler-162515:Task_5.task5data]
+GROUP BY
+  pickup_long, pickup_lat, dropoff_long, dropoff_lat, time_of_day
+
+followed by...
+
+SELECT
+  *
+FROM
+  [thematic-ruler-162515:Task_5.task5interimdata]
+WHERE
+  total > 200
